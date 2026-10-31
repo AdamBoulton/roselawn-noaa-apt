@@ -42,6 +42,8 @@ def build_satdump_command(args: argparse.Namespace, output_dir: Path, duration: 
         "hackrf",
         "--samplerate",
         str(args.sample_rate),
+        "--baseband_format",
+        "cs8",
         "--frequency",
         str(int(args.frequency_mhz * 1_000_000)),
         "--lna_gain",
@@ -177,12 +179,6 @@ def main() -> None:
     if args.sample_rate < 1_000_000:
         raise SystemExit("--sample-rate must be at least 1 MS/s.")
 
-    if not shutil.which(args.satdump):
-        raise SystemExit(
-            f"SatDump executable '{args.satdump}' was not found. "
-            "Install SatDump and ensure its CLI is on PATH."
-        )
-
     if args.list:
         try:
             passes = calculate_passes(args.hours, args.min_elevation, args.satellite)
@@ -190,6 +186,12 @@ def main() -> None:
             return
         except Exception as exc:
             raise SystemExit(f"ERROR: {exc}") from exc
+
+    if not shutil.which(args.satdump):
+        raise SystemExit(
+            f"SatDump executable '{args.satdump}' was not found. "
+            "Install SatDump and ensure its CLI is on PATH."
+        )
 
     print("Roselawn Radio — Meteor-M LRPT automatic receiver")
     print(
