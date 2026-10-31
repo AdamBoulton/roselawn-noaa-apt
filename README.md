@@ -1,95 +1,231 @@
-# Roselawn Radio — NOAA Weather Satellite APT Suite 🛰️
+# Roselawn Radio — Meteor-M LRPT Satellite Ground Station
 
-Automated Software Defined Radio (SDR) receiver, live orbital tracker, and image decoder for **NOAA Weather Satellites (NOAA 15, NOAA 18, NOAA 19)** on VHF **137 MHz APT (Automatic Picture Transmission)**.
+Roselawn Radio receives digital weather imagery from the **Meteor-M N2-3** and
+**Meteor-M N2-4** polar-orbiting weather satellites using a **HackRF One** and
+a 137 MHz V-dipole antenna.
 
-Built for **HackRF One** on Linux Mint / Ubuntu with PipeWire audio streaming and automated `noaa-apt` weather map generation.
+> **Important change:** NOAA-15, NOAA-18 and NOAA-19 have all been decommissioned.
+> Their old APT frequencies and the original hardcoded pass schedule are no
+> longer useful for live reception. The old noaa_*.py script names remain as
+> compatibility launchers, but now call the Meteor-M implementation.
 
----
+## Current receiving target
 
-## 📐 Architecture & Pipeline
+| Satellite | NORAD catalogue number | Mode | LRPT frequency |
+|---|---:|---|---:|
+| Meteor-M N2-3 | 57166 | LRPT | 137.900 MHz |
+| Meteor-M N2-4 | 59051 | LRPT | 137.900 MHz |
 
-```text
-  ┌─────────────────────────┐
-  │  V-Dipole Antenna       │ (137 MHz VHF, 120° V-angle, ~53.5 cm per arm)
-  └────────────┬────────────┘
-               │
-  ┌────────────▼────────────┐
-  │  HackRF One SDR         │ (137.100 - 137.9125 MHz, 2.0 MSPS IQ Capture)
-  └────────────┬────────────┘
-               │
-  ┌────────────▼────────────┐
-  │  noaa_sat_receiver.py   │ ──► Live PipeWire Stream (`pw-cat` 2400 Hz Sync Beep)
-  │  (FM Demodulator & TUI) │ ──► Raw 48 kHz PCM WAV Recording
-  └────────────┬────────────┘
-               │
-  ┌────────────▼────────────┐
-  │  noaa_decoder.py        │
-  │  (noaa-apt 1.4.1 Engine)│ ──► High-Res False-Color Satellite Weather PNG Map
-  └─────────────────────────┘
-```
+Satellite operation and transmission frequencies can change. The tracker
+downloads current two-line elements from CelesTrak for orbital predictions.
+TLEs are cached locally and rejected when older than seven days; stale orbital
+elements are not silently used.
 
----
+## Signal and software pipeline
 
-## 📡 Hardware & Antenna Setup Guide
+1. A horizontal V-dipole receives the 137.9 MHz LRPT downlink.
+2. HackRF One supplies the IQ stream to SatDump.
+3. SatDump's meteor_m2-x_lrpt pipeline performs demodulation, frame
+   synchronisation, error correction and image reconstruction.
+4. SatDump products are written beneath ~/Pictures/Weather_Satellites/.
 
-1. **Antenna Type:** Telescopic V-Dipole Antenna Kit.
-2. **Element Length:** Extend each whip arm to **~53 – 54 cm (~21 inches)** per arm.
-   * *Physics:* Resonant quarter-wave length ($\lambda/4$) at 137.5 MHz.
-3. **Orientation:** Position the elements in a **horizontal plane** angled at **120° V**, pointing towards open sky (North/South orientation).
+The Python code schedules passes and launches SatDump. It intentionally does
+not implement its own LRPT demodulator or image decoder.
 
----
+## Hardware setup
 
-## 🚀 Quick Start
+- HackRF One with current firmware and working USB connection.
+- V-dipole with each element extended to approximately **53.5 cm**.
+- Start with the elements horizontal and approximately **120° apart**.
+- Put the antenna outside with a clear view of as much sky as practical.
+- Keep the coaxial feed and nearby electronics away from the radiating elements.
+- A low-loss coaxial cable is preferable. Avoid adding an LNA or filter until
+  you have checked the spectrum and confirmed that it is needed.
 
-### 1. Requirements & Dependencies
+The V-dipole is a reasonable starting antenna, but it is linearly polarised.
+Meteor transmissions are circularly polarised, so fading due to polarisation
+and satellite attitude can still occur. A suitable circularly polarised antenna
+can be considered after the first signal test.
 
-```bash
-# System Dependencies
-sudo apt-get update
-sudo apt-get install -y hackrf pipewire-audio-client-libraries noaa-apt
+## Installation (Linux Mint / Ubuntu)
 
-# Python Virtual Environment Setup
-python3 -m venv ~/.sdr/venv
-source ~/.sdr/venv/bin/activate
+### 1. System packages
+
+~~~bash
+sudo apt update
+sudo apt install -y hackrf libhackrf-dev python3 python3-venv python3-pip
+~~~
+
+Check that the operating system can see the SDR:
+
+~~~bash
+hackrf_info
+~~~
+
+If access is denied, configure the HackRF udev rules for your distribution and
+reconnect the device. Do not run the receiver permanently as root just to work
+around missing USB permissions.
+
+### 2. Install SatDump
+
+Install a current Linux SatDump build from the official project releases or
+build it from the official source repository:
+
+- https://github.com/SatDump/SatDump/releases
+- https://github.com/SatDump/SatDump
+
+The build must include HackRF SDR support. Check that the CLI is available:
+
+~~~bash
+satdump --help
+satdump sdr_probe
+~~~
+
+The SDR probe should list HackRF. The live command used by this project follows
+SatDump's documented legacy live interface.
+
+### 3. Python environment
+
+From the repository root:
+
+~~~bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
+~~~
 
-### 2. Live Orbital Satellite Tracker
+## First reception: recommended sequence
 
-Predicts upcoming satellite passes, peak elevation angles, and countdowns over your location:
+### 1. Verify upcoming passes
 
-```bash
-python3 src/noaa_sat_tracker.py
-```
+~~~bash
+python src/meteor_sat_tracker.py --hours 24 --min-elevation 25
+~~~
 
-### 3. Live Satellite Receiver & Recorder
+The tracker prints AOS, peak and LOS in UTC. It uses fresh CelesTrak TLEs for
+NORAD 57166 and 59051. A high pass (ideally above 40°) is a better first target
+than a low pass.
 
-Captures 137 MHz APT satellite signals, streams live audio, and logs pass progress:
+### 2. Check the pass schedule without starting the SDR
 
-```bash
-python3 src/noaa_sat_receiver.py
-```
+~~~bash
+python src/meteor_sat_receiver.py --list --hours 24 --min-elevation 25
+~~~
 
-### 4. Manual / Standalone Image Decoder
+### 3. Automatically receive the next qualifying pass
 
-Convert any recorded 48 kHz NOAA WAV recording into a high-res PNG cloud map:
+~~~bash
+python src/meteor_sat_receiver.py
+~~~
 
-```bash
-python3 src/noaa_decoder.py path/to/recording.wav
-```
+The receiver waits until 30 seconds before the next pass, then starts SatDump
+and captures until 30 seconds after the satellite drops below the 10° horizon
+threshold.
 
----
+### 4. Keep the station running
 
-## 🛰️ Supported NOAA Satellites
+~~~bash
+python src/meteor_sat_receiver.py --continuous
+~~~
 
-* **NOAA 15:** `137.6200 MHz`
-* **NOAA 18:** `137.9125 MHz`
-* **NOAA 19:** `137.1000 MHz`
+The process refreshes orbital elements between passes and schedules the next
+qualifying pass. Use Ctrl+C to stop it.
 
-Output images are saved automatically to `~/Pictures/Weather_Satellites/`.
+### 5. Choose stricter pass criteria or a different output directory
 
----
+~~~bash
+python src/meteor_sat_receiver.py --list --min-elevation 40
+python src/meteor_sat_receiver.py --min-elevation 40 --output-dir "$HOME/SatelliteImages"
+~~~
 
-## 📄 License
+## Receiver settings
 
-MIT License — Created for the Roselawn Radio SDR Project.
+The default live capture settings are intentionally conservative:
+
+- RF: 137.900 MHz
+- Sample rate: 2,000,000 samples/s
+- HackRF LNA gain: 24 dB
+- HackRF VGA gain: 20 dB
+- RF amplifier: off (SatDump default)
+- DC blocking: enabled
+- SatDump pipeline: meteor_m2-x_lrpt
+
+The gain settings are starting values, not universal optimums. Strong local
+signals can overload the front end; weak signals may require different gain
+settings or a better antenna installation. Change gains only after inspecting
+the received spectrum and SatDump logs.
+
+For example:
+
+~~~bash
+python src/meteor_sat_receiver.py --lna-gain 16 --vga-gain 24
+~~~
+
+## Offline decoding of a raw IQ capture
+
+For a raw signed 8-bit IQ file recorded at 2 MS/s:
+
+~~~bash
+python src/meteor_decoder.py recording.cs8 --sample-rate 2000000 --baseband-format cs8
+~~~
+
+SatDump's offline pipeline syntax and supported Meteor LRPT options are
+documented at:
+
+https://github.com/SatDump/SatDump.Docs/blob/master/pipelines.rst
+
+## Troubleshooting
+
+### HackRF is not detected
+
+~~~bash
+hackrf_info
+satdump sdr_probe
+~~~
+
+Check USB permissions, udev rules, cable quality and that another application
+is not already using the HackRF.
+
+### Pass predictions look wrong
+
+The tracker needs internet access to obtain fresh TLEs. It will use a cached
+TLE only if its epoch is no more than seven days old. Check the warning printed
+by the tracker and compare predictions with a second orbital tracker.
+
+### SatDump runs but no image is produced
+
+Check the SatDump console output and the pass output directory. A process exit
+code of zero does not guarantee that enough valid LRPT frames were received.
+Look for frame synchronisation and Reed-Solomon statistics. Poor results can
+be caused by a low-elevation pass, obstructions, polarisation fading, local
+interference, excessive gain, a poor coax connection or a frequency/configuration
+mismatch.
+
+### Image is incomplete or noisy
+
+Try a higher-elevation pass first. Keep the antenna clear of buildings and
+trees, check the connector and coax, and inspect the waterfall for interference
+near 137.9 MHz before changing hardware.
+
+## Project files
+
+- src/meteor_sat_tracker.py — downloads current TLEs and predicts passes.
+- src/meteor_sat_receiver.py — schedules passes and launches SatDump live.
+- src/meteor_decoder.py — runs SatDump offline on an IQ recording.
+- src/noaa_*.py — compatibility launchers for the previous command names.
+
+## References
+
+- NOAA POES decommissioning notice:
+  https://www.nesdis.noaa.gov/news/suspension-of-poes-data-users-after-june-16-2025-and-decommissioning
+- CelesTrak GP/TLE service:
+  https://celestrak.org/NORAD/elements/
+- SatDump:
+  https://github.com/SatDump/SatDump
+- SatDump pipeline reference:
+  https://github.com/SatDump/SatDump.Docs/blob/master/pipelines.rst
+
+## License
+
+MIT License — Roselawn Radio SDR Project.
