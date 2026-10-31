@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import shutil
 import signal
 import subprocess
@@ -31,10 +32,43 @@ def wait_until(target: datetime) -> None:
         time.sleep(min(5.0, remaining))
 
 
+def detect_satdump_cli_mode(satdump: str) -> str:
+    """Detect the SatDump live CLI syntax supported by the installed build.
+
+    Newer builds document 'satdump legacy live ...'. Older builds use
+    'satdump live ...'. Some SatDump builds return exit code zero even when
+    an invalid pipeline is supplied, so infer syntax from --help rather than
+    relying only on the process exit status.
+    """
+    try:
+        result = subprocess.run(
+            [satdump, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        help_text = (result.stdout or "") + "\n" + (result.stderr or "")
+    except (OSError, subprocess.TimeoutExpired):
+        return "live"
+
+    if re.search(r"\bsatdump\s+legacy\s+live\b", help_text, flags=re.IGNORECASE):
+        return "legacy"
+    if re.search(r"\bsatdump\s+live(?:\s|\[|<)", help_text, flags=re.IGNORECASE):
+        return "live"
+
+    # Backwards-compatible default: older SatDump releases do not document
+    # the 'legacy' wrapper and expect 'satdump live PIPELINE OUTPUT'.
+    return "live"
+
+
 def build_satdump_command(args: argparse.Namespace, output_dir: Path, duration: int) -> list[str]:
-    return [
-        args.satdump,
-        "live",
+    command = [args.satdump]
+    if args.satdump_cli_mode == "legacy":
+        command.extend(["legacy", "live"])
+    else:
+        command.append("live")
+    command.extend([
         args.pipeline,
         str(output_dir),
         "--source",
@@ -52,7 +86,8 @@ def build_satdump_command(args: argparse.Namespace, output_dir: Path, duration: 
         "--timeout",
         str(duration),
         "--dc_block",
-    ]
+    ])
+    return command
 
 
 def run_capture(args: argparse.Namespace, satellite_pass: dict) -> int:
@@ -163,6 +198,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vga-gain", type=int, default=20, help="HackRF VGA gain (0–62, 2 dB steps).")
     parser.add_argument("--pipeline", default=DEFAULT_PIPELINE)
     parser.add_argument("--satdump", default="satdump")
+    parser.add_argument(
+        "--satdump-cli-mode",
+        choices=("auto", "legacy", "live"),
+        default="auto",
+        help="SatDump command syntax; auto-detected by default.",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     return parser.parse_args()
 
@@ -192,6 +233,9 @@ def main() -> None:
             "Install SatDump and ensure its CLI is on PATH."
         )
 
+    if args.satdump_cli_mode == "auto":
+        args.satdump_cli_mode = detect_satdump_cli_mode(args.satdump)
+    print(f"SatDump CLI mode: {args.satdump_cli_mode}")
     print("Roselawn Radio — Meteor-M LRPT automatic receiver")
     print(
         f"Pipeline: {args.pipeline} | HackRF sample rate: {args.sample_rate:,} samples/s | "

@@ -175,6 +175,19 @@ documented at:
 
 https://github.com/SatDump/SatDump.Docs/blob/master/pipelines.rst
 
+
+### SatDump CLI compatibility
+
+The receiver detects the installed SatDump live command syntax automatically.
+Older releases use \`satdump live PIPELINE OUTPUT\`; newer releases may use
+\`satdump legacy live PIPELINE OUTPUT\`. For custom or unusual builds, override
+the detection explicitly:
+
+~~~bash
+python src/meteor_sat_receiver.py --satdump-cli-mode live
+python src/meteor_sat_receiver.py --satdump-cli-mode legacy
+~~~
+
 ## Troubleshooting
 
 ### HackRF is not detected
