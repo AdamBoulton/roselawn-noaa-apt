@@ -34,7 +34,6 @@ def wait_until(target: datetime) -> None:
 def build_satdump_command(args: argparse.Namespace, output_dir: Path, duration: int) -> list[str]:
     return [
         args.satdump,
-        "legacy",
         "live",
         args.pipeline,
         str(output_dir),
