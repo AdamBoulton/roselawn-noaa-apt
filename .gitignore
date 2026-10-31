@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.wav
+*.iq
+*.raw
+*.png
+*.log
+.sdr/
+.idea/
+.vscode/
