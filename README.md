@@ -141,14 +141,18 @@ python src/meteor_sat_receiver.py --min-elevation 40 --output-dir "$HOME/Satelli
 
 ## Receiver settings
 
-The default live capture settings are intentionally conservative:
+The default live capture settings are tuned to drive the HackRF 8-bit ADC above
+quantisation noise while keeping the internal 14 dB RF amplifier off to avoid
+FM broadcast overload:
 
 - RF: 137.900 MHz
 - Sample rate: 2,000,000 samples/s
-- HackRF LNA gain: 24 dB
-- HackRF VGA gain: 20 dB
-- RF amplifier: off (SatDump default)
+- HackRF LNA gain: 40 dB
+- HackRF VGA gain: 32 dB
+- RF amplifier: off (enable with `--amp` if needed)
+- Bias-tee power: off (enable with `--bias` only when an external filtered LNA is inline)
 - DC blocking: enabled
+- Post-pass product generation (`--finish_processing`): enabled
 - SatDump pipeline: meteor_m2-x_lrpt
 
 The gain settings are starting values, not universal optimums. Strong local
@@ -159,15 +163,21 @@ the received spectrum and SatDump logs.
 For example:
 
 ~~~bash
-python src/meteor_sat_receiver.py --lna-gain 16 --vga-gain 24
+python src/meteor_sat_receiver.py --lna-gain 40 --vga-gain 36
+python src/meteor_sat_receiver.py --record-baseband --fill-missing
 ~~~
 
-## Offline decoding of a raw IQ capture
+Passing `--record-baseband` records the raw `.cs8` IQ stream during the pass
+and then runs offline decoding (automatically trying `meteor_m2-x_lrpt_80k` if
+the default `72k` pipeline produces no images).
 
-For a raw signed 8-bit IQ file recorded at 2 MS/s:
+## Offline decoding of a raw IQ or CADU capture
+
+For a raw signed 8-bit IQ file recorded at 2 MS/s or a `.cadu` frame file:
 
 ~~~bash
 python src/meteor_decoder.py recording.cs8 --sample-rate 2000000 --baseband-format cs8
+python src/meteor_decoder.py meteor_m2-x_lrpt.cadu
 ~~~
 
 SatDump's offline pipeline syntax and supported Meteor LRPT options are
